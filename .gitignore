@@ -1,0 +1,9 @@
+# SaasPwn
+.env
+__pycache__/
+*.pyc
+recon_*/
+*.egg-info/
+dist/
+build/
+.venv/

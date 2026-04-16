@@ -1,0 +1,135 @@
+# SaasPwn - SaaS & 3rd-Party Provider Configuration
+# Format: "{slug}" akan diganti dengan company slug saat runtime
+# Tambahkan/hapus provider sesuai kebutuhan
+
+saas_providers:
+  # Atlassian (Jira, Confluence, Service Desk)
+  - pattern: "{slug}.atlassian.net"
+    tags: ["atlassian", "jira", "confluence"]
+  - pattern: "{slug}-service-desk.atlassian.net"
+    tags: ["atlassian", "jira", "servicedesk"]
+  - pattern: "{slug}-servicedesk.atlassian.net"
+    tags: ["atlassian", "jira", "servicedesk"]
+  - pattern: "{slug}-helpdesk.atlassian.net"
+    tags: ["atlassian", "jira", "servicedesk"]
+  - pattern: "{slug}-jira.atlassian.net"
+    tags: ["atlassian", "jira"]
+  - pattern: "{slug}-wiki.atlassian.net"
+    tags: ["atlassian", "confluence"]
+  - pattern: "{slug}-confluence.atlassian.net"
+    tags: ["atlassian", "confluence"]
+  - pattern: "{slug}-support.atlassian.net"
+    tags: ["atlassian", "jira", "servicedesk"]
+
+  # ServiceNow
+  - pattern: "{slug}.service-now.com"
+    tags: ["servicenow"]
+  - pattern: "{slug}dev.service-now.com"
+    tags: ["servicenow"]
+  - pattern: "{slug}test.service-now.com"
+    tags: ["servicenow"]
+  - pattern: "{slug}uat.service-now.com"
+    tags: ["servicenow"]
+
+  # Zendesk
+  - pattern: "{slug}.zendesk.com"
+    tags: ["zendesk"]
+  - pattern: "{slug}-support.zendesk.com"
+    tags: ["zendesk"]
+  - pattern: "{slug}-help.zendesk.com"
+    tags: ["zendesk"]
+
+  # Freshdesk / Freshservice
+  - pattern: "{slug}.freshdesk.com"
+    tags: ["freshdesk"]
+  - pattern: "{slug}.freshservice.com"
+    tags: ["freshservice"]
+
+  # Other Productivity
+  - pattern: "{slug}.monday.com"
+    tags: ["monday"]
+  - pattern: "{slug}.notion.site"
+    tags: ["notion"]
+
+  # Identity & SSO
+  - pattern: "{slug}.okta.com"
+    tags: ["okta"]
+  - pattern: "{slug}.auth0.com"
+    tags: ["auth0"]
+  - pattern: "{slug}.onelogin.com"
+    tags: ["onelogin"]
+
+  # Cloud Hosting / PaaS
+  - pattern: "{slug}.herokuapp.com"
+    tags: ["heroku"]
+  - pattern: "{slug}.vercel.app"
+    tags: ["vercel"]
+  - pattern: "{slug}.netlify.app"
+    tags: ["netlify"]
+  - pattern: "{slug}.azurewebsites.net"
+    tags: ["azure"]
+
+  # CRM
+  - pattern: "{slug}.salesforce.com"
+    tags: ["salesforce"]
+  - pattern: "{slug}.my.salesforce.com"
+    tags: ["salesforce"]
+
+cloud_storage:
+  # S3 Buckets
+  - pattern: "{slug}.s3.amazonaws.com"
+    type: "s3"
+  - pattern: "{slug}-assets.s3.amazonaws.com"
+    type: "s3"
+  - pattern: "{slug}-backup.s3.amazonaws.com"
+    type: "s3"
+  - pattern: "{slug}-dev.s3.amazonaws.com"
+    type: "s3"
+  - pattern: "{slug}-staging.s3.amazonaws.com"
+    type: "s3"
+  - pattern: "{slug}-prod.s3.amazonaws.com"
+    type: "s3"
+
+  # Azure Blob
+  - pattern: "{slug}.blob.core.windows.net"
+    type: "azure_blob"
+
+  # GCS
+  - pattern: "storage.googleapis.com/{slug}"
+    type: "gcs"
+
+thirdparty_candidates:
+  - pattern: "groups.google.com/a/{slug}"
+    tags: ["google"]
+  - pattern: "{slug}.slack.com"
+    tags: ["slack"]
+  - pattern: "{slug}.sharepoint.com"
+    tags: ["microsoft", "sharepoint"]
+  - pattern: "{slug}-my.sharepoint.com"
+    tags: ["microsoft", "sharepoint"]
+  - pattern: "github.com/{slug}"
+    tags: ["github"]
+  - pattern: "gitlab.com/{slug}"
+    tags: ["gitlab"]
+  - pattern: "{slug}.bitbucket.io"
+    tags: ["bitbucket"]
+  - pattern: "{slug}.github.io"
+    tags: ["github"]
+  - pattern: "{slug}.workplace.com"
+    tags: ["workplace"]
+  - pattern: "{slug}.zoom.us"
+    tags: ["zoom"]
+  - pattern: "{slug}.webex.com"
+    tags: ["webex"]
+  - pattern: "trello.com/{slug}"
+    tags: ["trello"]
+
+google_dorks:
+  - query: 'site:pastebin.com "{slug}"'
+  - query: 'site:trello.com "{slug}"'
+  - query: 'site:docs.google.com "{slug}" filetype:xlsx OR filetype:csv'
+  - query: 'site:drive.google.com "{slug}"'
+  - query: 'site:groups.google.com "{slug}" "public"'
+  - query: 'inurl:sharepoint.com "{slug}" "login" OR "signin"'
+  - query: 'site:github.com "{slug}" password OR secret OR api_key'
+  - query: 'site:s3.amazonaws.com "{slug}"'
