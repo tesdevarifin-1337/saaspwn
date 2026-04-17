@@ -320,12 +320,110 @@ def load_providers(providers_file: Path, slugs: list) -> dict:
     return config
 
 
-def parse_httpx_jsonl(jsonl_file: str, url_output: str) -> list:
+# Platforms yang return 200 untuk path apapun (wildcard catch-all / SPA)
+# Title generik mereka bukan indikasi bahwa org benar-benar exist di sana
+GENERIC_TITLE_PLATFORMS = {
+    "trello.com": ["trello"],
+    "zoom.us": ["video conferencing", "zoom"],
+    "workplace.com": ["workplace"],
+    "webex.com": ["webex"],
+    "slack.com": ["slack"],
+    "monday.com": ["monday.com", "monday"],
+}
+
+# Platforms yang selalu return 301/302 → generic redirect, bukan evidence
+# ANY redirect dari platform ini = false positive (tidak ada info org)
+ALWAYS_REDIRECT_PLATFORMS = [
+    "workplace.com",
+    "groups.google.com",
+    "sharepoint.com",
+    "gitlab.com",
+    "bitbucket.org",
+]
+
+
+def is_false_positive(url: str, status: int, title: str, company_slug: str) -> bool:
+    """
+    Cek apakah result ini false positive.
+    Return True jika harus di-skip.
+
+    Strategy: untuk 3rd-party probing, redirect HAMPIR SELALU bukan evidence.
+    Platform seperti GitLab, Google Groups, Workplace, SharePoint selalu
+    redirect untuk path apapun — eksistensi org tidak bisa dibuktikan.
+    """
+    title_lower = title.lower().strip()
+    url_lower = url.lower()
+    slug_lower = company_slug.lower()
+
+    # ── RULE 1: Blanket redirect filter ──────────────────────────────────
+    # Semua 3xx response dari 3rd-party = not evidence of org presence.
+    # Platform seperti GitLab, Google Groups, Workplace, SharePoint selalu
+    # return 301/302 untuk ANY input tanpa membedakan exist vs non-exist.
+    if status in (301, 302, 303, 307, 308):
+        return True
+
+    # ── RULE 2: Wildcard-200 platforms ────────────────────────────────────
+    # Platform yang return 200 untuk path apapun (SPA catch-all).
+    # Title generik tanpa mention company = false positive.
+    for platform_domain, generic_titles in GENERIC_TITLE_PLATFORMS.items():
+        if platform_domain in url_lower:
+            if not title_lower:
+                # 200 tanpa title dari known wildcard platform = FP
+                return True
+            if any(title_lower == gt or title_lower.startswith(gt) for gt in generic_titles):
+                # Title hanya nama platform, KECUALI mengandung nama company
+                if slug_lower not in title_lower:
+                    return True
+
+    # ── RULE 3: GitHub-specific validation ───────────────────────────────
+    # github.com/{path} returns 200 for ANY existing user/org.
+    # "github.com/spotify-test" bisa jadi random user, bukan asset Spotify.
+    # Hanya loloskan jika title mengandung slug sebagai word boundary
+    # (e.g., "Spotify · GitHub" → match, "spotify-test · GitHub" → no match)
+    if "github.com/" in url_lower and status == 200:
+        # github.io pages are separate (e.g., spotify.github.io) — skip check
+        if "github.io" not in url_lower:
+            # Use word boundary: slug harus berdiri sendiri, bukan prefix/suffix
+            # Include - dan _ sebagai bagian dari token (spotify-test ≠ spotify)
+            if not re.search(r'(?<![a-z0-9_\-])' + re.escape(slug_lower) + r'(?![a-z0-9_\-])', title_lower):
+                return True
+
+    # ── RULE 4: 200 tanpa title = tidak informatif ───────────────────────
+    # Beberapa platform return 200 tapi body kosong / generic tanpa title
+    if status == 200 and not title_lower:
+        return True
+
+    return False
+
+
+def classify_confidence(url: str, status: int, title: str, company_slug: str) -> str:
+    """
+    Classify confidence level: high, medium, low.
+    Hanya 200 responses yang sampai sini (3xx sudah di-filter).
+    """
+    title_lower = title.lower()
+    slug_lower = company_slug.lower()
+
+    # High: 200 dengan title yang mengandung nama company
+    if status == 200 and slug_lower in title_lower:
+        return "high"
+
+    # Medium: 200 dengan title meaningful (panjang > 5 char, bukan generic)
+    if status == 200 and title_lower and len(title_lower) > 5:
+        return "medium"
+
+    # Low: everything else
+    return "low"
+
+
+def parse_httpx_jsonl(jsonl_file: str, url_output: str, company_slug: str = "") -> list:
     """
     Parse httpx JSONL → extract live URLs dan data.
+    Dengan smart validation untuk filter false positives.
     Return list of dicts. Tulis URL list ke url_output untuk Nuclei.
     """
     live_entries = []
+    filtered_entries = []
     urls = []
 
     if not os.path.exists(jsonl_file):
@@ -337,15 +435,30 @@ def parse_httpx_jsonl(jsonl_file: str, url_output: str) -> list:
                 data = json.loads(line.strip())
                 status = data.get("status_code", 0)
                 url = data.get("url", "")
-                if 200 <= status < 400 and url:
-                    live_entries.append({
-                        "url": url,
-                        "status_code": status,
-                        "title": data.get("title", ""),
-                        "tech": data.get("tech", []),
-                        "webserver": data.get("webserver", ""),
-                    })
-                    urls.append(url)
+                title = data.get("title", "")
+
+                if not url or status < 200 or status >= 500:
+                    continue
+
+                # Smart false positive check
+                if is_false_positive(url, status, title, company_slug):
+                    filtered_entries.append({"url": url, "status_code": status, "reason": "false_positive"})
+                    continue
+
+                # Hanya terima 200-299 sebagai truly live
+                # 301/302 yang lolos false positive check = potentially interesting redirect
+                confidence = classify_confidence(url, status, title, company_slug)
+
+                entry = {
+                    "url": url,
+                    "status_code": status,
+                    "title": title,
+                    "tech": data.get("tech", []),
+                    "webserver": data.get("webserver", ""),
+                    "confidence": confidence,
+                }
+                live_entries.append(entry)
+                urls.append(url)
             except json.JSONDecodeError:
                 log.debug(f"Skipping invalid JSON line in {jsonl_file}")
 
@@ -353,6 +466,13 @@ def parse_httpx_jsonl(jsonl_file: str, url_output: str) -> list:
         with open(url_output, "w") as f:
             f.write("\n".join(urls))
         log.info(f"  → {len(urls)} live URLs ditulis ke {url_output}")
+
+    if filtered_entries:
+        # Simpan yang di-filter untuk audit
+        filtered_file = url_output.replace(".txt", "_filtered.json")
+        with open(filtered_file, "w") as f:
+            json.dump(filtered_entries, f, indent=2)
+        log.info(f"  → {len(filtered_entries)} false positives filtered (saved to {filtered_file})")
 
     return live_entries
 
@@ -495,23 +615,19 @@ def main():
         f.write("\n".join(config["saas_tenants"]))
     log.info(f"1️⃣  Generated {len(config['saas_tenants'])} SaaS tenant URLs")
 
-    # DNS Resolve
-    log.info("2️⃣  DNS resolve via dnsx...")
-    resolved_file = f"{output_dir}/saas_resolved.txt"
-    run_cmd(f"dnsx -l {saas_file} -o {resolved_file} -silent -resp", timeout=180)
-
-    # httpx probe + fingerprint
-    log.info("3️⃣  Probing with httpx...")
+    # LANGSUNG httpx (skip dnsx)
+    # SaaS providers use wildcard DNS → dnsx sering drop subdomain yang valid
+    log.info("2️⃣  Probing SaaS tenants directly with httpx (skip dnsx)...")
     saas_httpx = f"{output_dir}/saas_httpx.jsonl"
     run_cmd(
-        f"httpx -l {resolved_file} -title -tech-detect -status-code -web-server "
-        f"-o {saas_httpx} -json -silent",
+        f"httpx -l {saas_file} -title -tech-detect -status-code -web-server "
+        f"-follow-redirects -o {saas_httpx} -json -silent",
         timeout=300,
     )
 
     # Parse live SaaS & extract URL list
     saas_urls = f"{output_dir}/saas_live_urls.txt"
-    results["live_saas"] = parse_httpx_jsonl(saas_httpx, saas_urls)
+    results["live_saas"] = parse_httpx_jsonl(saas_httpx, saas_urls, company)
     log.info(f"   ✅ Live SaaS: {len(results['live_saas'])}")
 
     # Nuclei scan SaaS
@@ -545,9 +661,8 @@ def main():
         )
 
         storage_urls = f"{output_dir}/cloud_storage_live.txt"
-        results["cloud_storage_exposed"] = parse_httpx_jsonl(storage_httpx, storage_urls)
+        results["cloud_storage_exposed"] = parse_httpx_jsonl(storage_httpx, storage_urls, company)
         log.info(f"   ✅ Exposed storage: {len(results['cloud_storage_exposed'])}")
-
     # ===================== PHASE 3: 3RD-PARTY RECON =====================
     log.info("")
     log.info("=" * 60)
@@ -585,13 +700,13 @@ def main():
     tp_httpx = f"{output_dir}/thirdparty_httpx.jsonl"
     run_cmd(
         f"httpx -l {tp_candidates_file} -title -tech-detect -status-code "
-        f"-o {tp_httpx} -json -silent",
+        f"-content-length -o {tp_httpx} -json -silent",
         timeout=300,
     )
 
-    # Parse live 3rd-party (FIX: sebelumnya tidak pernah diisi!)
+    # Parse live 3rd-party (dengan smart validation)
     tp_urls = f"{output_dir}/thirdparty_live_urls.txt"
-    results["live_thirdparty"] = parse_httpx_jsonl(tp_httpx, tp_urls)
+    results["live_thirdparty"] = parse_httpx_jsonl(tp_httpx, tp_urls, company)
     log.info(f"   ✅ Live 3rd-party: {len(results['live_thirdparty'])}")
 
     # Nuclei 3rd-party

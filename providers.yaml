@@ -99,30 +99,47 @@ cloud_storage:
     type: "gcs"
 
 thirdparty_candidates:
+  # validation options:
+  #   require_200             → only HTTP 200 counts (all redirects = FP)
+  #   require_200_with_title  → must be 200 AND title contains company slug
+  #   default                 → use standard is_false_positive() rules
+
   - pattern: "groups.google.com/a/{slug}"
     tags: ["google"]
+    validation: "require_200"
   - pattern: "{slug}.slack.com"
     tags: ["slack"]
+    validation: "require_200_with_title"
   - pattern: "{slug}.sharepoint.com"
     tags: ["microsoft", "sharepoint"]
+    validation: "require_200"
   - pattern: "{slug}-my.sharepoint.com"
     tags: ["microsoft", "sharepoint"]
+    validation: "require_200"
   - pattern: "github.com/{slug}"
     tags: ["github"]
+    validation: "require_200_with_title"
   - pattern: "gitlab.com/{slug}"
     tags: ["gitlab"]
+    validation: "require_200_with_title"
   - pattern: "{slug}.bitbucket.io"
     tags: ["bitbucket"]
+    validation: "require_200"
   - pattern: "{slug}.github.io"
     tags: ["github"]
+    validation: "require_200"
   - pattern: "{slug}.workplace.com"
     tags: ["workplace"]
+    validation: "require_200"
   - pattern: "{slug}.zoom.us"
     tags: ["zoom"]
+    validation: "require_200_with_title"
   - pattern: "{slug}.webex.com"
     tags: ["webex"]
+    validation: "require_200_with_title"
   - pattern: "trello.com/{slug}"
     tags: ["trello"]
+    validation: "require_200_with_title"
 
 google_dorks:
   - query: 'site:pastebin.com "{slug}"'
